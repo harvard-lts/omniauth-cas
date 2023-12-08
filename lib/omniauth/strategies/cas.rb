@@ -7,10 +7,13 @@ module OmniAuth
       include OmniAuth::Strategy
 
       # Custom Exceptions
-      class MissingCASTicket < StandardError; end
-      class InvalidCASTicket < StandardError; end
+      class MissingCASTicket < StandardError;
+      end
+      class InvalidCASTicket < StandardError;
+      end
 
       autoload :ServiceTicketValidator, 'omniauth/strategies/cas/service_ticket_validator'
+      autoload :SamlTicketValidator, 'omniauth/strategies/cas/saml_ticket_validator'
       autoload :LogoutRequest, 'omniauth/strategies/cas/logout_request'
 
       attr_accessor :raw_info
@@ -24,9 +27,9 @@ module OmniAuth
       option :ssl,  true
       option :merge_multivalued_attributes, false
       option :service_validate_url, '/serviceValidate'
-      option :login_url,            '/login'
-      option :logout_url,           '/logout'
-      option :on_single_sign_out,   Proc.new {}
+      option :login_url, '/login'
+      option :logout_url, '/logout'
+      option :on_single_sign_out, Proc.new {}
       # A Proc or lambda that returns a Hash of additional user info to be
       # merged with the info returned by the CAS server.
       #
@@ -35,7 +38,7 @@ module OmniAuth
       # @param [Hash] The user info for the Service Ticket returned by the CAS server
       #
       # @return [Hash] Extra user info
-      option :fetch_raw_info,       Proc.new { Hash.new }
+      option :fetch_raw_info, Proc.new { Hash.new }
       # Make all the keys configurable with some defaults set here
       option :uid_field, 'user'
       option :name_key, 'name'
@@ -51,15 +54,15 @@ module OmniAuth
       AuthHashSchemaKeys = %w{name email nickname first_name last_name location image phone}
       info do
         prune!({
-          name: raw_info[options[:name_key].to_s],
-          email: raw_info[options[:email_key].to_s],
-          nickname: raw_info[options[:nickname_key].to_s],
-          first_name: raw_info[options[:first_name_key].to_s],
-          last_name: raw_info[options[:last_name_key].to_s],
-          location: raw_info[options[:location_key].to_s],
-          image: raw_info[options[:image_key].to_s],
-          phone: raw_info[options[:phone_key].to_s]
-        })
+                 name: raw_info[options[:name_key].to_s],
+                 email: raw_info[options[:email_key].to_s],
+                 nickname: raw_info[options[:nickname_key].to_s],
+                 first_name: raw_info[options[:first_name_key].to_s],
+                 last_name: raw_info[options[:last_name_key].to_s],
+                 location: raw_info[options[:location_key].to_s],
+                 image: raw_info[options[:image_key].to_s],
+                 phone: raw_info[options[:phone_key].to_s]
+               })
       end
 
       extra do
@@ -158,10 +161,14 @@ module OmniAuth
       def service_validate_url(service_url, ticket)
         service_url = Addressable::URI.parse(service_url)
         service_url.query_values = service_url.query_values.tap { |qs| qs.delete('ticket') }
-        cas_url + append_params(options.service_validate_url, {
-          service: service_url.to_s,
-          ticket: ticket
-        })
+
+        params = if saml_validator?
+                   { TARGET: service_url.to_s, ticket: ticket, service: service_url.to_s }
+                 else
+                   { service: service_url.to_s, ticket: ticket }
+                 end
+
+        cas_url + append_params(options.service_validate_url, params)
       end
 
       # Build a CAS login URL from +service+.
@@ -180,7 +187,7 @@ module OmniAuth
       #
       # @return [String] the new joined URL.
       def append_params(base, params)
-        params = params.each { |k,v| v = Rack::Utils.escape(v) }
+        params = params.each { |k, v| v = Rack::Utils.escape(v) }
         Addressable::URI.parse(base).tap do |base_uri|
           base_uri.query_values = (base_uri.query_values || {}).merge(params)
         end.to_s
@@ -189,10 +196,18 @@ module OmniAuth
       # Validate the Service Ticket
       # @return [Object] the validated Service Ticket
       def validate_service_ticket(ticket)
-        ServiceTicketValidator.new(self, options, callback_url, ticket).call
+        if saml_validator?
+          SamlTicketValidator.new(self, options, callback_url, ticket).call
+        else
+          ServiceTicketValidator.new(self, options, callback_url, ticket).call
+        end
       end
 
-    private
+      private
+
+      def saml_validator?
+        options["service_validate_url"].include?("samlValidate")
+      end
 
       def fetch_raw_info(ticket)
         validator = validate_service_ticket(ticket)
