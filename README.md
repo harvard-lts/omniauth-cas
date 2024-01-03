@@ -1,5 +1,7 @@
 # OmniAuth CAS Strategy [![Gem Version][version_badge]][version] [![Build Status][github_actions_status]][github_actions]
 
+This is a fork to allow for updates to OmniAuth
+
 [version_badge]: https://badge.fury.io/rb/omniauth-cas.svg
 [version]: https://badge.fury.io/rb/omniauth-cas
 [github_actions]: https://github.com/dlindahl/omniauth-cas/actions
